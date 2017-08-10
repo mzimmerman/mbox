@@ -3,6 +3,7 @@ package mbox
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"strings"
 	"testing"
 )
@@ -335,7 +336,7 @@ func TestScanMessageMboxWithOneMessageWithoutNewlineAtEOF(t *testing.T) {
 
 func testMboxMessage(t *testing.T, mbox string, count int) {
 	b := bytes.NewBufferString(mbox)
-	m := NewScanner(b)
+	m := NewScanner(b, false)
 
 	for i := 0; i < count; i++ {
 		if !m.Next() {
@@ -398,7 +399,7 @@ func TestMboxMessageWithThreeMessagesMalformedButValid(t *testing.T) {
 
 func testMboxMessageInvalid(t *testing.T, mbox string) {
 	b := bytes.NewBufferString(mbox)
-	m := NewScanner(b)
+	m := NewScanner(b, false)
 
 	if m.Next() {
 		t.Errorf("Next() succeeded")
@@ -456,7 +457,7 @@ This is the second email in a test of boundaries.
 		"This is the second email in a test of boundaries.\n",
 	}
 	b := bytes.NewBufferString(sourceData)
-	m := NewScanner(b)
+	m := NewScanner(b, false)
 
 	for i := range expected {
 		if !m.Next() {
@@ -526,8 +527,7 @@ This is the second email in a test of boundaries.
 		"This is the second email in a test of boundaries.\n",
 	}
 	b := bytes.NewBufferString(sourceData)
-	m := NewScanner(b)
-
+	m := NewScanner(b, false)
 	for i := range expected {
 		if !m.Next() {
 			t.Errorf("Next() failed; pass %d", i)
@@ -554,7 +554,6 @@ This is the second email in a test of boundaries.
 			t.Errorf("%d - Unexpected error after Message(): %v", i, m.Err())
 		}
 	}
-
 	if m.Next() {
 		t.Errorf("Next() succeeded")
 	}
@@ -566,6 +565,100 @@ This is the second email in a test of boundaries.
 	}
 	if m.Err() != nil {
 		t.Errorf("Unexpected error after Message(): %v", m.Err())
+	}
+}
+
+func TestHeaders(t *testing.T) {
+	tests := []struct {
+		name          string
+		expectedFound int
+		expectedError error
+		buffer        string
+	}{
+		{
+			name:          "one message",
+			expectedFound: 1,
+			expectedError: nil,
+			buffer: `Delivered-To: test@host.com
+From: test0@host.com
+To: test@host.com
+Date: 14 Oct 2013 09:08:42 +0200
+Message-ID: <messageid-is-unique@host.com>
+`,
+		},
+		{
+			name:          "four messages",
+			expectedFound: 4,
+			expectedError: nil,
+			buffer: `Delivered-To: test@host.com
+From: test0@host.com
+To: test@host.com
+Date: 14 Oct 2013 09:08:42 +0200
+Message-ID: <messageid-is-unique@host.com>
+
+
+Delivered-To: test@host.com
+From: test1@host.com
+To: test@host.com
+Date: 14 Oct 2013 09:08:42 +0200
+Message-ID: <messageid-is-unique@host.com>
+
+
+Delivered-To: test@host.com
+From: test2@host.com
+To: test@host.com
+Date: 14 Oct 2013 09:08:42 +0200
+Message-ID: <messageid-is-unique@host.com>
+
+
+Delivered-To: test@host.com
+From: test3@host.com
+To: test@host.com
+Date: 14 Oct 2013 09:08:42 +0200
+Message-ID: <messageid-is-unique@host.com>
+
+
+`,
+		},
+	}
+	log.SetFlags(log.Lshortfile | log.Ldate | log.Ltime)
+	for i, test := range tests {
+		b := strings.NewReader(test.buffer)
+		m := NewScanner(b, true)
+		for j := 0; j < test.expectedFound; j++ {
+			next := m.Next()
+			err := m.Err()
+			if !next {
+				if err != test.expectedError {
+					t.Errorf("%s - Expected error %v, got %v", test.name, test.expectedError, err)
+				} else {
+					t.Errorf("%s - Next, on %d, returned false before it should!", test.name, j)
+				}
+			}
+			if msg := m.Message(); msg == nil {
+				t.Errorf("message is nil; pass %d", i)
+			} else {
+				fromHdr := msg.Header["From"]
+				expected := fmt.Sprintf("test%d@host.com", j)
+				if len(fromHdr) < 1 {
+					t.Errorf("%s-%d Expected from address of %s, got %v", test.name, j, expected, fromHdr)
+				} else if got := fromHdr[0]; got != expected {
+					t.Errorf("%s-%d Expected from address of %s, got %s", test.name, j, expected, got)
+				}
+			}
+		}
+		if m.Next() {
+			t.Errorf("%s - Next() succeeded", test.name)
+		}
+		if m.Err() != nil {
+			t.Errorf("%s - Unexpected error after Next(): %v", test.name, m.Err())
+		}
+		if msg := m.Message(); msg != nil {
+			t.Errorf("%s - message is not nil, got %#v", test.name, msg)
+		}
+		if m.Err() != nil {
+			t.Errorf("%s - Unexpected error after Message(): %v", test.name, m.Err())
+		}
 	}
 }
 
@@ -589,7 +682,7 @@ This is another simple test.
 Bye.
 `)
 
-	mbox := NewScanner(r)
+	mbox := NewScanner(r, false)
 	for mbox.Next() {
 		// If Next() returns true, you can expect Message() to return a
 		// valid *mail.Message.

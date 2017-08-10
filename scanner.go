@@ -21,6 +21,26 @@ import (
 // message.
 var ErrInvalidMboxFormat = errors.New("invalid mbox format")
 
+// scanHeader is a split function for a bufio.Scanner that returns a messages headers in
+// RFC 822 format or an error.
+func scanHeader(data []byte, atEOF bool) (int, []byte, error) {
+	if len(data) == 0 && atEOF {
+		return 0, nil, nil
+	}
+	e := bytes.Index(data, []byte("\n\n\n"))
+	if e == -1 && !atEOF {
+		// request more data
+		return 0, nil, nil
+	}
+	if atEOF {
+		if len(data) > 3 && !bytes.Equal(data[len(data)-3:], []byte("\n\n\n")) {
+			return len(data), append(data, []byte("\n\n\n")...), nil
+		}
+		return len(data), data, nil
+	}
+	return e + 3, data[:e+3], nil
+}
+
 // scanMessage is a split function for a bufio.Scanner that returns a message in
 // RFC 822 format or an error.
 func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
@@ -108,10 +128,13 @@ type Scanner struct {
 
 // NewScanner returns a new *Scanner to read messages from mbox file format data
 // provided by io.Reader r.
-func NewScanner(r io.Reader) *Scanner {
+func NewScanner(r io.Reader, headers bool) *Scanner {
 	s := bufio.NewScanner(r)
-	s.Split(scanMessage)
-
+	if headers {
+		s.Split(scanHeader)
+	} else {
+		s.Split(scanMessage)
+	}
 	return &Scanner{s, nil, nil}
 }
 
@@ -129,8 +152,7 @@ func (m *Scanner) Next() bool {
 		m.err = m.s.Err()
 		return false
 	}
-
-	m.m, m.err = mail.ReadMessage(bytes.NewBuffer(m.s.Bytes()))
+	m.m, m.err = mail.ReadMessage(bytes.NewReader(m.s.Bytes()))
 	if m.err != nil {
 		return false
 	}
@@ -152,7 +174,6 @@ func (m *Scanner) Message() *mail.Message {
 	if m.err != nil {
 		return nil
 	}
-
 	return m.m
 }
 
