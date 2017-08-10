@@ -33,9 +33,6 @@ func scanHeader(data []byte, atEOF bool) (int, []byte, error) {
 		return 0, nil, nil
 	}
 	if atEOF {
-		if len(data) > 3 && !bytes.Equal(data[len(data)-3:], []byte("\n\n\n")) {
-			return len(data), append(data, []byte("\n\n\n")...), nil
-		}
 		return len(data), data, nil
 	}
 	return e + 3, data[:e+3], nil
@@ -156,7 +153,6 @@ func (m *Scanner) Next() bool {
 	if m.err != nil {
 		return false
 	}
-
 	return true
 }
 
