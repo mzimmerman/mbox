@@ -500,6 +500,83 @@ This is the second email in a test of boundaries.
 	}
 }
 
+func TestScanMessageWithOpenBoundaries(t *testing.T) {
+	sourceData := `
+From one place.
+From: herp.derp at example.com (Herp Derp)
+Date: Thu, 01 Jan 2015 00:00:01 +0100
+Subject: Test
+Content-Type: multipart/alternative;
+        boundary=Apple-Mail-D55D9B1A-A379-4D5C-BDA9-00D35DF424A0
+
+This is a test of boundaries.  Accept new boundaries if a new multipart Content-Type is found
+
+From two place.
+From: herp.derp at example.com (Herp Derp)
+Date: Thu, 01 Jan 2015 00:00:01 +0100
+Subject: Test
+Content-Type: multipart/alternative;
+        boundary=newboundary
+
+From Herp Derp with love two.
+--newboundary--
+
+From another!
+From: herp.derp at example.com (Herp Derp)
+Date: Thu, 01 Jan 2015 00:00:01 +0100
+Subject: Test
+
+This is the third email in a test of boundaries.
+`
+	expected := []string{
+		"This is a test of boundaries.  Accept new boundaries if a new multipart Content-Type is found\n",
+		"From Herp Derp with love two.\n--newboundary--\n",
+		"This is the third email in a test of boundaries.\n",
+	}
+	b := bytes.NewBufferString(sourceData)
+	m := NewScanner(b, false)
+
+	for i := range expected {
+		if !m.Next() {
+			t.Errorf("Next() failed; pass %d", i)
+		}
+		if m.Err() != nil {
+			t.Errorf("Unexpected error after Next(): %v", m.Err())
+		}
+
+		msg := m.Message()
+		if msg == nil {
+			t.Errorf("message is nil; pass %d", i)
+			continue
+		}
+		body := new(bytes.Buffer)
+		_, err := body.ReadFrom(msg.Body)
+		if err != nil {
+			t.Errorf("%d - Unexpected error reading message body: %v", i, err)
+			continue
+		}
+		if body.String() != expected[i] {
+			t.Errorf("%d - Expected:\n %q\ngot\n%q", i, expected[i], body.String())
+		}
+		if m.Err() != nil {
+			t.Errorf("%d - Unexpected error after Message(): %v", i, m.Err())
+		}
+	}
+
+	if m.Next() {
+		t.Errorf("Next() succeeded")
+	}
+	if m.Err() != nil {
+		t.Errorf("Unexpected error after Next(): %v", m.Err())
+	}
+	if msg := m.Message(); msg != nil {
+		t.Errorf("message is not nil")
+	}
+	if m.Err() != nil {
+		t.Errorf("Unexpected error after Message(): %v", m.Err())
+	}
+}
+
 func TestScanMessageWithTextBoundary(t *testing.T) {
 	sourceData := `
 From one place.

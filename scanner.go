@@ -84,7 +84,7 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 		for _, v := range splt {
 			if strings.HasPrefix(v, "boundary=") {
 				c := strings.Index(v, "=") + 1
-				boundaryEnd = "--" + strings.Trim(strings.TrimRight(v[c:], ";"),`"'`) + "--"
+				boundaryEnd = "--" + strings.Trim(strings.TrimRight(v[c:], ";"), `"'`) + "--"
 				break
 			}
 		}
@@ -92,6 +92,12 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 	if boundaryEnd != "" {
 		b := bytes.Index(data, []byte(boundaryEnd))
 		if b == -1 {
+			c := bytes.Index(data, []byte("\nContent-Type: multipart"))
+			// c == the first boundary
+			d := bytes.Index(data[c+1:], []byte("\nContent-Type: multipart"))
+			if d+c+1 > e { // assume that the boundary end was never received
+				return e + 1 + advanceExtra, data[n+1 : e], nil
+			}
 			return 0, nil, nil // need more data!
 		}
 		if e < b {
