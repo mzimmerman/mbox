@@ -84,7 +84,7 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 		for _, v := range splt {
 			if strings.HasPrefix(v, "boundary=") {
 				c := strings.Index(v, "=") + 1
-				boundaryEnd = "--" + strings.Trim(v[c:], `"'`) + "--"
+				boundaryEnd = "--" + strings.Trim(strings.TrimRight(v[c:], ";"),`"'`) + "--"
 				break
 			}
 		}
