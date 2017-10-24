@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/mail"
 	"net/textproto"
+	"regexp"
 	"strings"
 )
 
@@ -38,6 +39,8 @@ func scanHeader(data []byte, atEOF bool) (int, []byte, error) {
 	return e + 3, data[:e+3], nil
 }
 
+var fromLine = regexp.MustCompile("\nFrom .*(19|20)[0-9]{2}")
+
 // scanMessage is a split function for a bufio.Scanner that returns a message in
 // RFC 822 format or an error.
 func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
@@ -46,12 +49,23 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 	}
 
 	var n int
-	e := bytes.Index(data, []byte("\nFrom "))
+	e := -1
+	r := fromLine.FindIndex(data)
+	if len(r) > 0 {
+		e = r[0]
+	}
+	//e := bytes.Index(data, []byte("\nFrom "))
 	advanceExtra := 0
 	if e == 0 {
 		data = data[1:] // advance past the leading LF
 		advanceExtra = 1
-		e = bytes.Index(data, []byte("\nFrom "))
+		r = fromLine.FindIndex(data)
+		if len(r) > 0 {
+			e = r[0]
+		} else {
+			e = -1
+		}
+		//e = bytes.Index(data, []byte("\nFrom "))
 	}
 	if e == -1 && !atEOF {
 		// request more data
@@ -101,7 +115,13 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 			return 0, nil, nil // need more data!
 		}
 		if e < b {
-			e = bytes.Index(data[b:], []byte("\nFrom "))
+			r = fromLine.FindIndex(data)
+			if len(r) > 0 {
+				e = r[0]
+			} else {
+				e = -1
+			}
+			//e = bytes.Index(data[b:], []byte("\nFrom "))
 			e += b
 		}
 	}
@@ -124,9 +144,10 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 // using Next. If Next returned true, you can expect Message to return a valid
 // *mail.Message.
 type Scanner struct {
-	s   *bufio.Scanner
-	m   *mail.Message
-	err error
+	s       *bufio.Scanner
+	m       *mail.Message
+	curByte int
+	err     error
 }
 
 // NewScanner returns a new *Scanner to read messages from mbox file format data
@@ -138,7 +159,11 @@ func NewScanner(r io.Reader, headers bool) *Scanner {
 	} else {
 		s.Split(scanMessage)
 	}
-	return &Scanner{s, nil, nil}
+	return &Scanner{s: s}
+}
+
+func (m *Scanner) Location() int {
+	return m.curByte
 }
 
 // Next skips to the next message and returns true. It will return false if
@@ -155,6 +180,7 @@ func (m *Scanner) Next() bool {
 		m.err = m.s.Err()
 		return false
 	}
+	m.curByte += len(m.s.Bytes())
 	m.m, m.err = mail.ReadMessage(bytes.NewReader(m.s.Bytes()))
 	if m.err != nil {
 		return false

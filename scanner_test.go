@@ -428,7 +428,7 @@ func TestMboxMessageWithOneMessageMissingHeaders(t *testing.T) {
 
 func TestScanMessageWithBoundaries(t *testing.T) {
 	sourceData := `
-From one place.
+From one place.  2014
 From: herp.derp at example.com (Herp Derp)
 Date: Thu, 01 Jan 2015 00:00:01 +0100
 Subject: Test
@@ -445,7 +445,7 @@ From Herp Derp with love.
 Bye.
 --Apple-Mail-D55D9B1A-A379-4D5C-BDA9-00D35DF424A0--
 
-From another!
+From another!  2014
 From: herp.derp at example.com (Herp Derp)
 Date: Thu, 01 Jan 2015 00:00:01 +0100
 Subject: Test
@@ -502,7 +502,7 @@ This is the second email in a test of boundaries.
 
 func TestScanMessageWithOpenBoundaries(t *testing.T) {
 	sourceData := `
-From one place.
+From one place.  2014
 From: herp.derp at example.com (Herp Derp)
 Date: Thu, 01 Jan 2015 00:00:01 +0100
 Subject: Test
@@ -511,7 +511,7 @@ Content-Type: multipart/alternative;
 
 This is a test of boundaries.  Accept new boundaries if a new multipart Content-Type is found
 
-From two place.
+From two place.  2014
 From: herp.derp at example.com (Herp Derp)
 Date: Thu, 01 Jan 2015 00:00:01 +0100
 Subject: Test
@@ -521,7 +521,7 @@ Content-Type: multipart/alternative;
 From Herp Derp with love two.
 --newboundary--
 
-From another!
+From another! 2014
 From: herp.derp at example.com (Herp Derp)
 Date: Thu, 01 Jan 2015 00:00:01 +0100
 Subject: Test
@@ -579,7 +579,7 @@ This is the third email in a test of boundaries.
 
 func TestScanMessageWithTextBoundary(t *testing.T) {
 	sourceData := `
-From one place.
+From one place.  2014
 From: herp.derp at example.com (Herp Derp)
 Date: Thu, 01 Jan 2015 00:00:01 +0100
 Subject: Test
@@ -592,7 +592,7 @@ And, by the way, this is how a "From" line is escaped in mboxo format:
 
 Bye.
 
-From another!
+From another!  2014
 From: herp.derp at example.com (Herp Derp)
 Date: Thu, 01 Jan 2015 00:00:01 +0100
 Subject: Test
