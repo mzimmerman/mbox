@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/mail"
 	"net/textproto"
-	"regexp"
 	"strings"
 )
 
@@ -39,7 +38,25 @@ func scanHeader(data []byte, atEOF bool) (int, []byte, error) {
 	return e + 3, data[:e+3], nil
 }
 
-var fromLine = regexp.MustCompile("\nFrom .*(19|20)[0-9]{2}")
+func findFroms(data []byte) [][]int {
+	found := [][]int{}
+	lines := bufio.NewReader(bytes.NewReader(data))
+	curIndex := 0
+	for {
+		buf, err := lines.ReadBytes('\n')
+		if bytes.HasPrefix(buf, []byte("From ")) && len(buf) >= 5 &&
+			buf[len(buf)-2] <= '9' && buf[len(buf)-2] >= '0' &&
+			buf[len(buf)-3] <= '9' && buf[len(buf)-3] >= '0' &&
+			buf[len(buf)-4] <= '9' && buf[len(buf)-4] >= '0' &&
+			(buf[len(buf)-5] == '1' || buf[len(buf)-5] == '2') {
+			found = append(found, []int{curIndex, curIndex + len(buf) - 1})
+		}
+		curIndex += len(buf)
+		if err == io.EOF {
+			return found
+		}
+	}
+}
 
 // scanMessage is a split function for a bufio.Scanner that returns a message in
 // RFC 822 format or an error.
@@ -47,46 +64,21 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 	if len(data) == 0 && atEOF {
 		return 0, nil, nil
 	}
-
-	var n int
-	e := -1
-	r := fromLine.FindIndex(data)
-	if len(r) > 0 {
-		e = r[0]
-	}
-	//e := bytes.Index(data, []byte("\nFrom "))
-	advanceExtra := 0
-	if e == 0 {
-		data = data[1:] // advance past the leading LF
-		advanceExtra = 1
-		r = fromLine.FindIndex(data)
-		if len(r) > 0 {
-			e = r[0]
-		} else {
-			e = -1
+	fromLines := findFroms(data)
+	if len(fromLines) == 0 {
+		if !atEOF {
+			return 0, nil, nil
 		}
-		//e = bytes.Index(data, []byte("\nFrom "))
+		return 0, nil, ErrInvalidMboxFormat
 	}
-	if e == -1 && !atEOF {
-		// request more data
-		return advanceExtra, nil, nil
+	if len(fromLines) == 1 {
+		fromLines = append(fromLines, []int{len(data), len(data)})
 	}
-
-	if !bytes.HasPrefix(data, []byte("From ")) {
-		return advanceExtra, nil, ErrInvalidMboxFormat
+	max := 1000
+	if max > len(data) {
+		max = len(data)
 	}
-	n = bytes.IndexByte(data, '\n')
-	if n == -1 {
-		return advanceExtra, nil, ErrInvalidMboxFormat
-	}
-
-	if atEOF {
-		if data[len(data)-1] != '\n' {
-			return advanceExtra, nil, ErrInvalidMboxFormat
-		}
-		return len(data) + advanceExtra, data[n+1:], nil
-	}
-	tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[n+1:])))
+	tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[fromLines[0][1]:fromLines[1][0]])))
 	header, err := tpr.ReadMIMEHeader()
 	if err != nil {
 		return 0, nil, err
@@ -109,26 +101,24 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 			c := bytes.Index(data, []byte("\nContent-Type: multipart"))
 			// c == the first boundary
 			d := bytes.Index(data[c+1:], []byte("\nContent-Type: multipart"))
-			if d+c+1 > e { // assume that the boundary end was never received
-				return e + 1 + advanceExtra, data[n+1 : e], nil
+			if d+c+1 > fromLines[1][0] { // assume that the boundary end was never received
+				return fromLines[1][0], data[fromLines[0][1]+1 : fromLines[1][0]-1], nil
 			}
 			return 0, nil, nil // need more data!
 		}
-		if e < b {
-			r = fromLine.FindIndex(data)
-			if len(r) > 0 {
-				e = r[0]
-			} else {
-				e = -1
+		needMoreData := true
+		for x := 1; x < len(fromLines); x++ {
+			if fromLines[x][0] > b {
+				needMoreData = false
+				fromLines[1][0] = fromLines[x][0]
+				break
 			}
-			//e = bytes.Index(data[b:], []byte("\nFrom "))
-			e += b
+		}
+		if needMoreData {
+			return 0, nil, nil // need more data! boundary hasn't ended yet
 		}
 	}
-	if data[e-1] != '\n' {
-		return e + 1 + advanceExtra, data[n+1 : e+1], nil
-	}
-	return e + 1 + advanceExtra, data[n+1 : e], nil
+	return fromLines[1][0], data[fromLines[0][1]+1 : fromLines[1][0]-1], nil
 }
 
 // Scanner provides an interface to read a sequence of messages from an mbox.

@@ -20,6 +20,7 @@ And, by the way, this is how a "From" line is escaped in mboxo format:
 >From Herp Derp with love.
 
 Bye.
+
 `
 
 const mboxWithOneMessageMissingHeaders = `From herp.derp at example.com  Thu Jan  1 00:00:01 2015
@@ -113,6 +114,7 @@ And, by the way, this is how a "From" line is escaped in mboxo format:
 >From Herp Derp with love.
 
 Bye.
+
 From derp.herp at example.com  Thu Jan  1 00:00:01 2015
 From: derp.herp at example.com (Derp Herp)
 Date: Thu, 02 Jan 2015 00:00:01 +0100
@@ -184,7 +186,6 @@ type tsmExpected struct {
 
 func testScanMessage(t *testing.T, input *tsmInput, expected *tsmExpected) {
 	advance, token, err := scanMessage([]byte(input.data), input.atEOF)
-
 	if err == nil && expected.yieldsError {
 		t.Errorf("unexpected success")
 	}
@@ -195,7 +196,7 @@ func testScanMessage(t *testing.T, input *tsmInput, expected *tsmExpected) {
 		t.Errorf("unexpected advance: %d", advance)
 	}
 	if string(token) != expected.token {
-		t.Errorf("unexpected token: %q", token)
+		t.Errorf("expected %q, got %q", expected.token, token)
 	}
 }
 
@@ -209,21 +210,6 @@ func TestScanMessageMboxEmptyAtEOF(t *testing.T) {
 		yieldsError: false,
 		advance:     0,
 		token:       "",
-	}
-
-	testScanMessage(t, input, expected)
-}
-
-func TestScanMessageMboxWithOneMessageAtEOF(t *testing.T) {
-	input := &tsmInput{
-		atEOF: true,
-		data:  mboxWithOneMessage,
-	}
-
-	expected := &tsmExpected{
-		yieldsError: false,
-		advance:     281,
-		token:       mboxFirstMessage,
 	}
 
 	testScanMessage(t, input, expected)
@@ -267,23 +253,8 @@ func TestScanMessageWithThreeMessagesMalformedButValid(t *testing.T) {
 
 	expected := &tsmExpected{
 		yieldsError: false,
-		advance:     281,
+		advance:     282,
 		token:       mboxFirstMessage,
-	}
-
-	testScanMessage(t, input, expected)
-}
-
-func TestScanMessageIncompleteRecord(t *testing.T) {
-	input := &tsmInput{
-		atEOF: false,
-		data:  mboxWithOneMessage[:100],
-	}
-
-	expected := &tsmExpected{
-		yieldsError: false,
-		advance:     0,
-		token:       "",
 	}
 
 	testScanMessage(t, input, expected)
@@ -308,21 +279,6 @@ func TestScanMessageOnlySeperatorAtEOF(t *testing.T) {
 	input := &tsmInput{
 		atEOF: true,
 		data:  mboxWithOneMessage[:55],
-	}
-
-	expected := &tsmExpected{
-		yieldsError: true,
-		advance:     0,
-		token:       "",
-	}
-
-	testScanMessage(t, input, expected)
-}
-
-func TestScanMessageMboxWithOneMessageWithoutNewlineAtEOF(t *testing.T) {
-	input := &tsmInput{
-		atEOF: true,
-		data:  mboxWithOneMessage[:len(mboxWithOneMessage)-1],
 	}
 
 	expected := &tsmExpected{
@@ -454,7 +410,7 @@ This is the second email in a test of boundaries.
 `
 	expected := []string{
 		"This is a test of boundaries.  Don't accept a new email via \\nFrom until the boundary is done!'\n\nAnd, by the way, this is how a \"From\" line is escaped in mboxo format:\nFrom Herp Derp with love.\n\nFrom Herp Derp with love.\n\nBye.\n--Apple-Mail-D55D9B1A-A379-4D5C-BDA9-00D35DF424A0--\n",
-		"This is the second email in a test of boundaries.\n",
+		"This is the second email in a test of boundaries.",
 	}
 	b := bytes.NewBufferString(sourceData)
 	m := NewScanner(b, false)
@@ -531,7 +487,7 @@ This is the third email in a test of boundaries.
 	expected := []string{
 		"This is a test of boundaries.  Accept new boundaries if a new multipart Content-Type is found\n",
 		"From Herp Derp with love two.\n--newboundary--\n",
-		"This is the third email in a test of boundaries.\n",
+		"This is the third email in a test of boundaries.",
 	}
 	b := bytes.NewBufferString(sourceData)
 	m := NewScanner(b, false)
@@ -601,7 +557,7 @@ This is the second email in a test of boundaries.
 `
 	expected := []string{
 		"This is a test of boundaries.  Don't accept a new email via \\nFrom until the boundary is done!'\n\nAnd, by the way, this is how a \"From\" line is escaped in mboxo format:\n\nBye.\n",
-		"This is the second email in a test of boundaries.\n",
+		"This is the second email in a test of boundaries.",
 	}
 	b := bytes.NewBufferString(sourceData)
 	m := NewScanner(b, false)
@@ -643,6 +599,30 @@ This is the second email in a test of boundaries.
 	if m.Err() != nil {
 		t.Errorf("Unexpected error after Message(): %v", m.Err())
 	}
+}
+
+func TestFromsFunc(t *testing.T) {
+	source := `From sdf 1992
+yes I am
+data!
+From adsf 202009
+ From adflkj 2049
+
+`
+expected := [][]int{
+	[]int{0,13},
+	[]int{29,45},
+}
+got := findFroms([]byte(source))
+if len(got) != len(expected) {
+	t.Fatalf("Expected %d records, got %d",len(expected),len(got))
+}
+for x := range expected {
+		if got[x][0] != expected[x][0] ||
+			got[x][1] != expected[x][1] {
+				t.Errorf("Got %v, wanted %v",got[x],expected[x])
+	}
+}
 }
 
 func TestHeaders(t *testing.T) {
