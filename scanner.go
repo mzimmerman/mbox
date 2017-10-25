@@ -38,22 +38,29 @@ func scanHeader(data []byte, atEOF bool) (int, []byte, error) {
 	return e + 3, data[:e+3], nil
 }
 
-func findFroms(data []byte) [][]int {
-	found := [][]int{}
-	lines := bufio.NewReader(bytes.NewReader(data))
-	curIndex := 0
+func findFroms(data []byte) (found [][]int) {
+	fromPos := bytes.Index(data, []byte("\nFrom "))
+	if bytes.HasPrefix(data, []byte("From ")) {
+		fromPos = 0
+	}
 	for {
-		buf, err := lines.ReadBytes('\n')
-		if bytes.HasPrefix(buf, []byte("From ")) && len(buf) >= 5 &&
-			buf[len(buf)-2] <= '9' && buf[len(buf)-2] >= '0' &&
-			buf[len(buf)-3] <= '9' && buf[len(buf)-3] >= '0' &&
-			buf[len(buf)-4] <= '9' && buf[len(buf)-4] >= '0' &&
-			(buf[len(buf)-5] == '1' || buf[len(buf)-5] == '2') {
-			found = append(found, []int{curIndex, curIndex + len(buf) - 1})
+		if fromPos == -1 {
+			return
 		}
-		curIndex += len(buf)
-		if err == io.EOF {
-			return found
+		nextLine := bytes.IndexByte(data[fromPos+1:], '\n')
+		if nextLine == -1 {
+			return
+		}
+		nextLine += fromPos + 1
+		if data[nextLine-1] <= '9' && data[nextLine-1] >= '0' &&
+			data[nextLine-2] <= '9' && data[nextLine-2] >= '0' &&
+			data[nextLine-3] <= '9' && data[nextLine-3] >= '0' &&
+			(data[nextLine-4] == '1' || data[nextLine-4] == '2') {
+			found = append(found, []int{fromPos, nextLine})
+		}
+		fromPos = bytes.Index(data[nextLine:], []byte("\nFrom "))
+		if fromPos != -1 {
+			fromPos += nextLine + 1 // +1 to move past \n
 		}
 	}
 }
