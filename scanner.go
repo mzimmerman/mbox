@@ -85,6 +85,9 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 	tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[fromLines[0][1]+1 : fromLines[1][0]])))
 	header, err := tpr.ReadMIMEHeader()
 	if err != nil {
+		if !atEOF && len(data) < 1024*1024*50 { // 1 MB header!
+			return 0, nil, nil // get more, can't read a proper header with partial data
+		}
 		return 0, nil, fmt.Errorf("%v - data was:\n**************\n%s\n************", err, data[fromLines[0][1]+1:fromLines[1][0]])
 	}
 	cth := header.Get(textproto.CanonicalMIMEHeaderKey("Content-Type"))
