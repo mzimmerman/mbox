@@ -183,7 +183,7 @@ func testScanMessage(t *testing.T, input *tsmInput, expected *tsmExpected) {
 		t.Errorf("unexpected advance: %d", advance)
 	}
 	if string(token) != expected.token {
-		t.Errorf("expected %q, got %q", expected.token, token)
+		t.Errorf("Got unexpected message:\nhad=%q\ngot=%q\n", expected.token, token)
 	}
 }
 
@@ -378,7 +378,7 @@ This is the second email in a test of boundaries.
 `
 	expected := []string{
 		"This is a test of boundaries.  Don't accept a new email via \\nFrom until the boundary is done!'\n\nAnd, by the way, this is how a \"From\" line is escaped in mboxo format:\nFrom Herp Derp with love.\n\nFrom Herp Derp with love.\n\nBye.\n--Apple-Mail-D55D9B1A-A379-4D5C-BDA9-00D35DF424A0--\n",
-		"This is the second email in a test of boundaries.",
+		"This is the second email in a test of boundaries.\n",
 	}
 	b := bytes.NewBufferString(sourceData)
 	m := NewScanner(b, false)
@@ -455,7 +455,7 @@ This is the third email in a test of boundaries.
 	expected := []string{
 		"This is a test of boundaries.  Accept new boundaries if a new multipart Content-Type is found\n",
 		"From Herp Derp with love two.\n--newboundary--\n",
-		"This is the third email in a test of boundaries.",
+		"This is the third email in a test of boundaries.\n",
 	}
 	b := bytes.NewBufferString(sourceData)
 	m := NewScanner(b, false)
@@ -527,7 +527,7 @@ This is the second email in a test of boundaries.
 `
 	expected := []string{
 		"This is a test of boundaries.  Don't accept a new email via\nFrom until the boundary is done! 2017\n\nAnd, by the way, this is how a \"From\" line is escaped in mboxo format:\n\nBye.\n--monkey_d3df4dc8-da5e-47dd-be15-f19c5ed55194--\n",
-		"This is the second email in a test of boundaries.",
+		"This is the second email in a test of boundaries.\n",
 	}
 	b := bytes.NewBufferString(sourceData)
 	m := NewScanner(b, false)
@@ -568,30 +568,6 @@ This is the second email in a test of boundaries.
 	}
 	if m.Err() != nil {
 		t.Errorf("Unexpected error after Message(): %v", m.Err())
-	}
-}
-
-func TestFromsFunc(t *testing.T) {
-	source := `From sdf 1992
-yes I am
-data!
-From adsf 202009
- From adflkj 2049
-
-`
-	expected := [][]int{
-		[]int{0, 13},
-		[]int{29, 45},
-	}
-	got := findFroms([]byte(source), 2)
-	if len(got) != len(expected) {
-		t.Fatalf("Expected %d records, got %d", len(expected), len(got))
-	}
-	for x := range expected {
-		if got[x][0] != expected[x][0] ||
-			got[x][1] != expected[x][1] {
-			t.Errorf("Got %v, wanted %v", got[x], expected[x])
-		}
 	}
 }
 

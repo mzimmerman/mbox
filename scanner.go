@@ -10,12 +10,10 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/mail"
 	"net/textproto"
-	"strings"
 )
 
 // ErrInvalidMboxFormat is the error returned by the Next method of type Mbox if
@@ -40,33 +38,29 @@ func scanHeader(data []byte, atEOF bool) (int, []byte, error) {
 	return e + 3, data[:e+3], nil
 }
 
-func findFroms(data []byte, fromNumber int) (found [][]int) {
-	fromPos := bytes.Index(data, []byte("\nFrom "))
-	if bytes.HasPrefix(data, []byte("From ")) {
-		fromPos = 0
-	}
+func findFroms(data []byte) (int, int) {
+	curPos := 0
 	for {
-		if fromPos == -1 {
-			return
+		fromPos := bytes.Index(data[curPos:], []byte("\nFrom "))
+		if bytes.HasPrefix(data[curPos:], []byte("From ")) {
+			fromPos = 0
 		}
+		if fromPos == -1 {
+			return -1, -1
+		}
+		fromPos += curPos
 		nextLine := bytes.IndexByte(data[fromPos+1:], '\n')
 		if nextLine == -1 {
-			return
+			return -1, -1
 		}
 		nextLine += fromPos + 1
 		if data[nextLine-1] <= '9' && data[nextLine-1] >= '0' &&
 			data[nextLine-2] <= '9' && data[nextLine-2] >= '0' &&
 			data[nextLine-3] <= '9' && data[nextLine-3] >= '0' &&
 			(data[nextLine-4] == '1' || data[nextLine-4] == '2') {
-			found = append(found, []int{fromPos, nextLine})
-			if len(found) == fromNumber { // doesn't help to find more
-				return
-			}
+			return fromPos, nextLine + 1
 		}
-		fromPos = bytes.Index(data[nextLine:], []byte("\nFrom "))
-		if fromPos != -1 {
-			fromPos += nextLine + 1 // +1 to move past \n
-		}
+		curPos = nextLine
 	}
 }
 
@@ -76,8 +70,8 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 	if len(data) == 0 && atEOF {
 		return 0, nil, nil
 	}
-	fromLines := findFroms(data, 2)
-	if len(fromLines) == 0 {
+	start, end := findFroms(data)
+	if start == -1 || end == -1 {
 		if !atEOF {
 			return 0, nil, nil
 		}
@@ -85,58 +79,30 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 		return len(data), nil, nil
 		//return 0, nil, ErrInvalidMboxFormat
 	}
-	if len(fromLines) == 1 {
-		if !atEOF {
+	curStart, curEnd := end, end
+	for {
+		priorStart, priorEnd := findFroms(data[curEnd:])
+		//log.Printf("start=%d, end=%d,priorStart=%d,priorEnd=%d,data=%s", start, end, priorStart, priorEnd, data[curEnd:])
+		if priorStart == -1 || priorEnd == -1 {
+			if atEOF { // have the initial From header, just want to return what we have without finding the next one
+				return len(data), data[end:], nil
+			}
 			return 0, nil, nil
 		}
-		fromLines = append(fromLines, []int{len(data), len(data)})
-	}
-	tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[fromLines[0][1]+1:])))
-	header, err := tpr.ReadMIMEHeader()
-	if err != nil {
-		return 0, nil, fmt.Errorf("%v - data was:\n**************\n%s\n************", err, data[fromLines[0][1]+1:])
-	}
-	cth := header.Get(textproto.CanonicalMIMEHeaderKey("Content-Type"))
-	boundaryEnd := ""
-	splt := strings.Split(cth, "; ")
-	for _, v := range splt {
-		if strings.HasPrefix(v, "boundary=") {
-			c := strings.Index(v, "=") + 1
-			boundaryEnd = "\n--" + strings.Trim(strings.TrimRight(v[c:], ";"), `"'`) + "--\n"
-			break
+		curStart, curEnd = priorStart+curEnd, priorEnd+curEnd
+		if bytes.Index(data[curEnd:], []byte("\n\n")) == -1 {
+			// must be a blank after the headers before content
+			return 0, nil, nil // get more, end of header hasn't yet come
 		}
-	}
-	if boundaryEnd != "" {
-		b := bytes.Index(data, []byte(boundaryEnd))
-		if b == -1 {
-			c := bytes.Index(data, []byte("\nContent-Type: "))
-			// c == the first boundary
-			d := bytes.Index(data[c+1:], []byte("\nContent-Type: "))
-			if d == -1 {
-				if atEOF {
-					return len(data), data[fromLines[0][1]+1:], nil
-				}
-				return 0, nil, nil // need more data! boundary wasn't found and there's no second Content-Type header to be found
-			}
-			fromToFind := 3
-			for {
-				fromLines = findFroms(data, fromToFind)
-				if len(fromLines) < fromToFind {
-					if atEOF {
-						return len(data), data[fromLines[0][1]+1:], nil
-					}
-					return 0, nil, nil // can't find the next From line past the boundary so we can't be sure *this* is the correct From line, get more
-				}
-				if fromLines[len(fromLines)-1][0] > d {
-					return fromLines[len(fromLines)-2][0], data[fromLines[0][1]+1 : fromLines[len(fromLines)-2][0]-1], nil
-				}
-				fromToFind++
-			}
+		tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[curEnd:])))
+		header, err := tpr.ReadMIMEHeader()
+		if err != nil || len(header) < 2 {
+			// error processing header, probably not a valid message!  move on!
+			continue
 		}
-		b += len(boundaryEnd)
-		return b, data[fromLines[0][1]+1 : b], nil
+		//if len(header) >= 2 { // found my next proper From!
+		return curStart - 1, data[end:curStart], nil
 	}
-	return fromLines[1][0], data[fromLines[0][1]+1 : fromLines[1][0]-1], nil
 }
 
 // Scanner provides an interface to read a sequence of messages from an mbox.
