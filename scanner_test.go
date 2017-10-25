@@ -136,19 +136,6 @@ This is the last simple test.
 Bye.
 `
 
-const mboxWithOneMessageMissingSeparator = `From: herp.derp at example.com (Herp Derp)
-Date: Thu, 01 Jan 2015 00:00:01 +0100
-Subject: Test
-
-This is a simple test.
-
-And, by the way, this is how a "From" line is escaped in mboxo format:
-
->From Herp Derp with love.
-
-Bye.
-`
-
 const mboxFirstMessage = `From: herp.derp at example.com (Herp Derp)
 Date: Thu, 01 Jan 2015 00:00:01 +0100
 Subject: Test
@@ -215,21 +202,6 @@ func TestScanMessageMboxEmptyAtEOF(t *testing.T) {
 	testScanMessage(t, input, expected)
 }
 
-func TestScanMessageMboxWithOneMessageMissingSeparatorAtEOF(t *testing.T) {
-	input := &tsmInput{
-		atEOF: true,
-		data:  mboxWithOneMessageMissingSeparator,
-	}
-
-	expected := &tsmExpected{
-		yieldsError: true,
-		advance:     0,
-		token:       "",
-	}
-
-	testScanMessage(t, input, expected)
-}
-
 func TestScanMessageMboxWithThreeMessages(t *testing.T) {
 	input := &tsmInput{
 		atEOF: false,
@@ -278,12 +250,12 @@ func TestScanMessageVeryShortIncompleteRecord(t *testing.T) {
 func TestScanMessageOnlySeperatorAtEOF(t *testing.T) {
 	input := &tsmInput{
 		atEOF: true,
-		data:  mboxWithOneMessage[:55],
+		data:  mboxWithOneMessage[:50],
 	}
 
 	expected := &tsmExpected{
-		yieldsError: true,
-		advance:     0,
+		yieldsError: false,
+		advance:     50,
 		token:       "",
 	}
 
@@ -372,10 +344,6 @@ func testMboxMessageInvalid(t *testing.T, mbox string) {
 	if m.Next() {
 		t.Errorf("Next() after error succeeded")
 	}
-}
-
-func TestMboxMessageWithOneMessageMissingSeparator(t *testing.T) {
-	testMboxMessageInvalid(t, mboxWithOneMessageMissingSeparator)
 }
 
 func TestMboxMessageWithOneMessageMissingHeaders(t *testing.T) {
@@ -615,7 +583,7 @@ From adsf 202009
 		[]int{0, 13},
 		[]int{29, 45},
 	}
-	got := findFroms([]byte(source))
+	got := findFroms([]byte(source), 2)
 	if len(got) != len(expected) {
 		t.Fatalf("Expected %d records, got %d", len(expected), len(got))
 	}

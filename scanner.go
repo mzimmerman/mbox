@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/mail"
 	"net/textproto"
 	"strings"
@@ -39,7 +40,7 @@ func scanHeader(data []byte, atEOF bool) (int, []byte, error) {
 	return e + 3, data[:e+3], nil
 }
 
-func findFroms(data []byte) (found [][]int) {
+func findFroms(data []byte, fromNumber int) (found [][]int) {
 	fromPos := bytes.Index(data, []byte("\nFrom "))
 	if bytes.HasPrefix(data, []byte("From ")) {
 		fromPos = 0
@@ -58,6 +59,9 @@ func findFroms(data []byte) (found [][]int) {
 			data[nextLine-3] <= '9' && data[nextLine-3] >= '0' &&
 			(data[nextLine-4] == '1' || data[nextLine-4] == '2') {
 			found = append(found, []int{fromPos, nextLine})
+			if len(found) == fromNumber { // doesn't help to find more
+				return
+			}
 		}
 		fromPos = bytes.Index(data[nextLine:], []byte("\nFrom "))
 		if fromPos != -1 {
@@ -72,23 +76,25 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 	if len(data) == 0 && atEOF {
 		return 0, nil, nil
 	}
-	fromLines := findFroms(data)
+	fromLines := findFroms(data, 2)
 	if len(fromLines) == 0 {
 		if !atEOF {
 			return 0, nil, nil
 		}
-		return 0, nil, ErrInvalidMboxFormat
+		log.Printf("invalid MBOX format, still had data to process as follows:\n*********start*******\n%q\n**********end********", data)
+		return len(data), nil, nil
+		//return 0, nil, ErrInvalidMboxFormat
 	}
 	if len(fromLines) == 1 {
+		if !atEOF {
+			return 0, nil, nil
+		}
 		fromLines = append(fromLines, []int{len(data), len(data)})
 	}
-	tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[fromLines[0][1]+1 : fromLines[1][0]])))
+	tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[fromLines[0][1]+1:])))
 	header, err := tpr.ReadMIMEHeader()
 	if err != nil {
-		if !atEOF && len(data) < 1024*1024*50 { // 1 MB header!
-			return 0, nil, nil // get more, can't read a proper header with partial data
-		}
-		return 0, nil, fmt.Errorf("%v - data was:\n**************\n%s\n************", err, data[fromLines[0][1]+1:fromLines[1][0]])
+		return 0, nil, fmt.Errorf("%v - data was:\n**************\n%s\n************", err, data[fromLines[0][1]+1:])
 	}
 	cth := header.Get(textproto.CanonicalMIMEHeaderKey("Content-Type"))
 	boundaryEnd := ""
@@ -105,23 +111,30 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 		if b == -1 {
 			c := bytes.Index(data, []byte("\nContent-Type: "))
 			// c == the first boundary
-			d := bytes.Index(data[c+1:], []byte("\nContent-Type: multipart"))
-			if d+c+1 > fromLines[1][0] { // assume that the boundary end was never received
-				return fromLines[1][0], data[fromLines[0][1]+1 : fromLines[1][0]-1], nil
+			d := bytes.Index(data[c+1:], []byte("\nContent-Type: "))
+			if d == -1 {
+				if atEOF {
+					return len(data), data[fromLines[0][1]+1:], nil
+				}
+				return 0, nil, nil // need more data! boundary wasn't found and there's no second Content-Type header to be found
 			}
-			return 0, nil, nil // need more data!
-		}
-		needMoreData := true
-		for x := 1; x < len(fromLines); x++ {
-			if fromLines[x][0] > b {
-				needMoreData = false
-				fromLines[1][0] = fromLines[x][0]
-				break
+			fromToFind := 3
+			for {
+				fromLines = findFroms(data, fromToFind)
+				if len(fromLines) < fromToFind {
+					if atEOF {
+						return len(data), data[fromLines[0][1]+1:], nil
+					}
+					return 0, nil, nil // can't find the next From line past the boundary so we can't be sure *this* is the correct From line, get more
+				}
+				if fromLines[len(fromLines)-1][0] > d {
+					return fromLines[len(fromLines)-2][0], data[fromLines[0][1]+1 : fromLines[len(fromLines)-2][0]-1], nil
+				}
+				fromToFind++
 			}
 		}
-		if needMoreData {
-			return 0, nil, nil // need more data! boundary hasn't ended yet
-		}
+		b += len(boundaryEnd)
+		return b, data[fromLines[0][1]+1 : b], nil
 	}
 	return fromLines[1][0], data[fromLines[0][1]+1 : fromLines[1][0]-1], nil
 }
