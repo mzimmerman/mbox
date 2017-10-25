@@ -542,11 +542,13 @@ Subject: Test
 Content-Type: text/html; charset="utf-8";
  boundary="monkey_d3df4dc8-da5e-47dd-be15-f19c5ed55194"
 
-This is a test of boundaries.  Don't accept a new email via \nFrom until the boundary is done!'
+This is a test of boundaries.  Don't accept a new email via
+From until the boundary is done! 2017
 
 And, by the way, this is how a "From" line is escaped in mboxo format:
 
 Bye.
+--monkey_d3df4dc8-da5e-47dd-be15-f19c5ed55194--
 
 From another!  2014
 From: herp.derp at example.com (Herp Derp)
@@ -556,7 +558,7 @@ Subject: Test
 This is the second email in a test of boundaries.
 `
 	expected := []string{
-		"This is a test of boundaries.  Don't accept a new email via \\nFrom until the boundary is done!'\n\nAnd, by the way, this is how a \"From\" line is escaped in mboxo format:\n\nBye.\n",
+		"This is a test of boundaries.  Don't accept a new email via\nFrom until the boundary is done! 2017\n\nAnd, by the way, this is how a \"From\" line is escaped in mboxo format:\n\nBye.\n--monkey_d3df4dc8-da5e-47dd-be15-f19c5ed55194--\n",
 		"This is the second email in a test of boundaries.",
 	}
 	b := bytes.NewBufferString(sourceData)
@@ -609,20 +611,20 @@ From adsf 202009
  From adflkj 2049
 
 `
-expected := [][]int{
-	[]int{0,13},
-	[]int{29,45},
-}
-got := findFroms([]byte(source))
-if len(got) != len(expected) {
-	t.Fatalf("Expected %d records, got %d",len(expected),len(got))
-}
-for x := range expected {
+	expected := [][]int{
+		[]int{0, 13},
+		[]int{29, 45},
+	}
+	got := findFroms([]byte(source))
+	if len(got) != len(expected) {
+		t.Fatalf("Expected %d records, got %d", len(expected), len(got))
+	}
+	for x := range expected {
 		if got[x][0] != expected[x][0] ||
 			got[x][1] != expected[x][1] {
-				t.Errorf("Got %v, wanted %v",got[x],expected[x])
+			t.Errorf("Got %v, wanted %v", got[x], expected[x])
+		}
 	}
-}
 }
 
 func TestHeaders(t *testing.T) {

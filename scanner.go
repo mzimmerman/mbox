@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/mail"
 	"net/textproto"
@@ -81,31 +82,25 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 	if len(fromLines) == 1 {
 		fromLines = append(fromLines, []int{len(data), len(data)})
 	}
-	max := 1000
-	if max > len(data) {
-		max = len(data)
-	}
-	tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[fromLines[0][1]:fromLines[1][0]])))
+	tpr := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[fromLines[0][1]+1 : fromLines[1][0]])))
 	header, err := tpr.ReadMIMEHeader()
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, fmt.Errorf("%v - data was:\n**************\n%s\n************", err, data[fromLines[0][1]+1:fromLines[1][0]])
 	}
-	cth := header.Get("Content-Type")
+	cth := header.Get(textproto.CanonicalMIMEHeaderKey("Content-Type"))
 	boundaryEnd := ""
-	if strings.Contains(cth, "multipart") {
-		splt := strings.Split(cth, "; ")
-		for _, v := range splt {
-			if strings.HasPrefix(v, "boundary=") {
-				c := strings.Index(v, "=") + 1
-				boundaryEnd = "--" + strings.Trim(strings.TrimRight(v[c:], ";"), `"'`) + "--"
-				break
-			}
+	splt := strings.Split(cth, "; ")
+	for _, v := range splt {
+		if strings.HasPrefix(v, "boundary=") {
+			c := strings.Index(v, "=") + 1
+			boundaryEnd = "\n--" + strings.Trim(strings.TrimRight(v[c:], ";"), `"'`) + "--\n"
+			break
 		}
 	}
 	if boundaryEnd != "" {
 		b := bytes.Index(data, []byte(boundaryEnd))
 		if b == -1 {
-			c := bytes.Index(data, []byte("\nContent-Type: multipart"))
+			c := bytes.Index(data, []byte("\nContent-Type: "))
 			// c == the first boundary
 			d := bytes.Index(data[c+1:], []byte("\nContent-Type: multipart"))
 			if d+c+1 > fromLines[1][0] { // assume that the boundary end was never received
