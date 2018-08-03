@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"log"
 	"net/mail"
 	"net/textproto"
 )
@@ -75,7 +74,7 @@ func scanMessage(data []byte, atEOF bool) (int, []byte, error) {
 		if !atEOF {
 			return 0, nil, nil
 		}
-		log.Printf("invalid MBOX format, still had data to process as follows:\n*********start*******\n%q\n**********end********", data)
+		// log.Printf("invalid MBOX format, still had data to process as follows:\n*********start*******\n%q\n**********end********", data)
 		return len(data), nil, nil
 		//return 0, nil, ErrInvalidMboxFormat
 	}
